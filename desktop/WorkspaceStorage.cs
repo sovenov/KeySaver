@@ -40,6 +40,12 @@ namespace KeySaver
         [DataMember(Name = "idleSeconds")]
         public int IdleSeconds { get; set; }
 
+        [DataMember(Name = "passwordSalt")]
+        public string PasswordSalt { get; set; }
+
+        [DataMember(Name = "passwordHash")]
+        public string PasswordHash { get; set; }
+
         public Preferences()
         {
             SetDefaults();
@@ -62,7 +68,9 @@ namespace KeySaver
             TabRule = true;
             EnterRule = false;
             IdleRule = true;
-            IdleSeconds = 10;
+            IdleSeconds = 5;
+            PasswordSalt = null;
+            PasswordHash = null;
         }
     }
 
@@ -110,6 +118,11 @@ namespace KeySaver
                 var bytes = Utf8.GetBytes(content);
                 stream.Write(bytes, 0, bytes.Length);
             });
+        }
+
+        public bool HasPreferences()
+        {
+            return File.Exists(preferencesPath);
         }
 
         public Preferences LoadPreferences()

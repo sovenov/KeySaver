@@ -60,9 +60,23 @@ namespace KeySaver
         {
             string version = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
             var dialog = CreateDialog("О программе", "KeySaver " + version,
-                "Локальный журнал ввода с клавиатуры для Windows. Сессия сохраняется после щелчка левой кнопкой мыши, Tab или паузы.\n\n" +
-                "Форматы переноса: JSON и архив KeySaver (.keysaver), в том числе с паролем.", out var actions,
-                "C# · WPF · .NET Framework 4.8 · Windows CNG");
+                "Локальный журнал ввода с клавиатуры для Windows.\n\n" +
+                "Форматы переноса: JSON и архив KeySaver (.keysaver), в том числе с паролем.", out var actions);
+            var details = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
+            details.Children.Add(new TextBlock
+            {
+                Text = "C# · WPF · .NET Framework 4.8 · Windows CNG",
+                FontSize = 11, Foreground = PaletteBrush("SubtleBrush"), TextWrapping = TextWrapping.Wrap
+            });
+            var github = new TextBlock
+            {
+                Text = "open source · github.com/sovenov", FontSize = 11, Margin = new Thickness(0, 6, 0, 0),
+                Foreground = PaletteBrush("SubtleBrush"), Cursor = System.Windows.Input.Cursors.Hand
+            };
+            github.MouseLeftButtonUp += (block, click) => System.Diagnostics.Process.Start("https://github.com/sovenov");
+            details.Children.Add(github);
+            var content = (StackPanel)dialog.Content;
+            content.Children.Insert(content.Children.IndexOf(actions), details);
             var close = DialogButton("Закрыть", PaletteBrush("AccentBrush"), PaletteBrush("OnAccentBrush"), PaletteBrush("AccentBrush"));
             close.IsDefault = true;
             close.IsCancel = true;

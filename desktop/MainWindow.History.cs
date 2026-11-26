@@ -7,6 +7,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using Microsoft.Win32;
 
 namespace KeySaver
 {
@@ -61,6 +62,7 @@ namespace KeySaver
         {
             oldestFirst = !oldestFirst;
             SortButton.ToolTip = oldestFirst ? "Сначала старые" : "Сначала новые";
+            ((System.Windows.Media.ScaleTransform)SortIcon.RenderTransform).ScaleY = oldestFirst ? -1 : 1;
             RenderHistory(false);
         }
 
@@ -230,7 +232,25 @@ namespace KeySaver
             if (preferences.Mode == "all") return;
             var item = ScopeChoice.SelectedItem as AppItem;
             if (item == null) return;
-            string path = item.Key == "custom" ? NormalizeExe(CustomPathInput.Text) : item.Path;
+            AddScopePath(item.Key == "custom" ? CustomPathInput.Text : item.Path);
+        }
+
+        private void BrowseScopeApp(object sender, RoutedEventArgs e)
+        {
+            if (preferences.Mode == "all") return;
+            var dialog = new OpenFileDialog
+            {
+                Title = "Выбор приложения",
+                Filter = "Программы (*.exe)|*.exe",
+                CheckFileExists = true
+            };
+            if (dialog.ShowDialog(this) != true) return;
+            AddScopePath(dialog.FileName);
+        }
+
+        private void AddScopePath(string path)
+        {
+            path = NormalizeExe(path);
             if (!IsExe(path))
             {
                 ScopeMessage.Text = "Укажите полный путь к файлу .exe.";

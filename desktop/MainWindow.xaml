@@ -47,6 +47,7 @@
         <PathGeometry x:Key="TabGeometry" Figures="M4,12 H16 M12,8 L16,12 12,16 M19,7 V17"/>
         <PathGeometry x:Key="EnterGeometry" Figures="M19,5 V10 Q19,13 16,13 H5 M9,9 L5,13 9,17"/>
         <PathGeometry x:Key="ClockGeometry" Figures="M20,12 A8,8 0 1 1 4,12 A8,8 0 1 1 20,12 M12,7.5 V12 L15,14"/>
+        <PathGeometry x:Key="LockGeometry" Figures="M8,11 V7.5 A4,4 0 0 1 16,7.5 V11 M6.5,11 H17.5 V19.5 H6.5 Z"/>
 
         <Style x:Key="IconShape" TargetType="Path">
             <Setter Property="Width" Value="18"/>
@@ -130,6 +131,29 @@
             <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonFace" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonFace" Property="BorderBrush" Value="{DynamicResource ActiveLineBrush}"/>
+                                <Setter TargetName="ButtonFace" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonFace" Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonFace" Property="Opacity" Value=".5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource HeaderButton}">
             <Setter Property="Background" Value="{DynamicResource InsetBrush}"/>
@@ -497,6 +521,7 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="TabFace" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                <Setter TargetName="TabFace" Property="BorderBrush" Value="{DynamicResource ActiveLineBrush}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="TabFace" Property="Background" Value="{DynamicResource SelectedBrush}"/>
@@ -516,6 +541,7 @@
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="Margin" Value="0,0,0,4"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
@@ -534,13 +560,9 @@
                                 <Setter TargetName="ModeFace" Property="Background" Value="{DynamicResource HoverBrush}"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="ModeFace" Property="BorderBrush" Value="{DynamicResource ActiveLineBrush}"/>
                                 <Setter TargetName="ModeFace" Property="Background" Value="{DynamicResource SelectedBrush}"/>
                                 <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource AccentBrush}"/>
                                 <Setter TargetName="ModeDot" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="ModeFace" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -550,6 +572,7 @@
         <Style x:Key="RuleSwitch" TargetType="CheckBox">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
@@ -578,9 +601,6 @@
                                 <Setter TargetName="SwitchDot" Property="Fill" Value="{DynamicResource OnAccentBrush}"/>
                                 <Setter TargetName="SwitchDot" Property="HorizontalAlignment" Value="Right"/>
                             </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="RuleFace" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                            </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="RuleFace" Property="Opacity" Value=".55"/>
                             </Trigger>
@@ -596,14 +616,16 @@
             <RowDefinition Height="52"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <Border Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="20,0">
+        <Border x:Name="AppHeader" Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="7,0,20,0">
             <DockPanel LastChildFill="False">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <ContentControl Style="{StaticResource GlyphBadge}" Content="{StaticResource KeyboardGeometry}"
-                                    Width="30" Height="30" Padding="4" Foreground="White" Background="#3969DE"/>
+                    <Image Width="30" Height="30" Source="Assets/KeySaver.ico"/>
                     <TextBlock Text="KeySaver" Margin="10,0,0,0" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource HeaderButton}" ToolTip="Заблокировать" AutomationProperties.Name="Заблокировать" Click="LockInterface">
+                        <Path Style="{StaticResource ActionIcon}" Data="{StaticResource LockGeometry}"/>
+                    </Button>
                     <Button Style="{StaticResource HeaderButton}" ToolTip="Настройки" AutomationProperties.Name="Настройки" Click="OpenSettings">
                         <Path Style="{StaticResource ActionIcon}" Data="{StaticResource SettingsGeometry}"/>
                     </Button>
@@ -720,7 +742,12 @@
                                         </Button>
                                         <Button x:Name="SortButton" Style="{StaticResource ToolbarButton}" ToolTip="Сначала новые"
                                                 AutomationProperties.Name="Изменить порядок сортировки" Click="ToggleSort">
-                                            <Path x:Name="SortIcon" Style="{StaticResource ActionIcon}" Data="{StaticResource SortGeometry}" Width="16" Height="16"/>
+                                            <Path x:Name="SortIcon" Style="{StaticResource ActionIcon}" Data="{StaticResource SortGeometry}"
+                                                  Width="16" Height="16" RenderTransformOrigin="0.5,0.5">
+                                                <Path.RenderTransform>
+                                                    <ScaleTransform ScaleY="1"/>
+                                                </Path.RenderTransform>
+                                            </Path>
                                         </Button>
                                     </StackPanel>
                                     <StackPanel>
@@ -892,6 +919,7 @@
                                         <ComboBox x:Name="ScopeChoice" Style="{StaticResource InputCombo}" Width="230" DisplayMemberPath="Name"
                                                   AutomationProperties.Name="Добавить приложение" SelectionChanged="ScopeChoiceChanged"/>
                                         <Button Content="Добавить" Style="{StaticResource RoundedButton}" Click="AddScopeApp" Margin="8,0,0,0"/>
+                                        <Button Content="Выбрать .exe" Style="{StaticResource RoundedButton}" Click="BrowseScopeApp" Margin="8,0,0,0"/>
                                     </DockPanel>
                                     <StackPanel x:Name="CustomPathField" Margin="0,10,0,0" Visibility="Collapsed">
                                         <TextBlock Style="{StaticResource FieldLabel}" Text="Полный путь к .exe"/>
@@ -961,7 +989,7 @@
                                         <StackPanel Margin="72,0,18,18">
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Время простоя, сек." Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
-                                                <TextBox x:Name="IdleSecondsInput" Style="{StaticResource InputBox}" Text="10" Width="84"
+                                                <TextBox x:Name="IdleSecondsInput" Style="{StaticResource InputBox}" Text="5" Width="84"
                                                          Margin="8,0,0,0" TextChanged="IdleSecondsChanged"
                                                          AutomationProperties.Name="Время простоя, секунд"/>
                                             </StackPanel>
@@ -971,6 +999,16 @@
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
+                            <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Margin="18,22,18,8" Padding="0,14,0,6">
+                                <CheckBox x:Name="Autostart" Style="{StaticResource RuleSwitch}"
+                                          AutomationProperties.Name="Автозапуск Windows" Click="ChangeAutostart">
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                        <TextBlock Text="Автозапуск"/>
+                                        <TextBlock Text="Запускать KeySaver при входе в Windows" FontSize="13" FontWeight="Normal"
+                                                   Foreground="{DynamicResource MutedBrush}"/>
+                                    </StackPanel>
+                                </CheckBox>
+                            </Border>
                         </StackPanel>
                     </Border>
                 </TabItem>
@@ -1040,9 +1078,41 @@
                         </Border>
                     </Grid>
                 </TabItem>
+                <TabItem Header="Пароль">
+                    <Border Style="{StaticResource Panel}" Width="420" HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <StackPanel>
+                            <Border Style="{StaticResource PanelHeader}">
+                                <TextBlock Style="{StaticResource PanelTitle}" Text="Смена пароля"/>
+                            </Border>
+                            <StackPanel Margin="20">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Текущий пароль"/>
+                                <PasswordBox x:Name="CurrentPassword" Style="{StaticResource PasswordInput}" AutomationProperties.Name="Текущий пароль"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Новый пароль" Margin="0,12,0,6"/>
+                                <PasswordBox x:Name="NewPassword" Style="{StaticResource PasswordInput}" AutomationProperties.Name="Новый пароль"/>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Повторите новый пароль" Margin="0,12,0,6"/>
+                                <PasswordBox x:Name="RepeatPassword" Style="{StaticResource PasswordInput}" AutomationProperties.Name="Повторите новый пароль"/>
+                                <Button Style="{StaticResource PrimaryButton}" Content="Сменить пароль" HorizontalAlignment="Left"
+                                        MinHeight="38" Margin="0,16,0,0" Click="ChangePassword"/>
+                                <TextBlock x:Name="PasswordStatus" Style="{StaticResource NoteText}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </TabItem>
             </TabControl>
             <Button Style="{StaticResource RoundedButton}" Content="Назад" HorizontalAlignment="Left" VerticalAlignment="Top"
                     AutomationProperties.Name="Назад к истории" Click="CloseSettings"/>
         </Grid>
+        <Border x:Name="LockOverlay" Grid.RowSpan="2" Visibility="Collapsed" Background="{DynamicResource CanvasBrush}" Panel.ZIndex="20">
+            <Border Style="{StaticResource Panel}" Width="380" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="Интерфейс заблокирован" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Text="Введите пароль, чтобы продолжить." Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,14" TextWrapping="Wrap"/>
+                    <PasswordBox x:Name="UnlockPassword" Style="{StaticResource PasswordInput}" AutomationProperties.Name="Пароль блокировки" KeyDown="UnlockPasswordKey"/>
+                    <TextBlock x:Name="UnlockError" Style="{StaticResource StatusText}"/>
+                    <Button Style="{StaticResource PrimaryButton}" Content="Разблокировать" HorizontalAlignment="Left"
+                            MinHeight="38" Margin="0,16,0,0" Click="UnlockInterface"/>
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </Window>

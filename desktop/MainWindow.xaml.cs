@@ -29,6 +29,7 @@ namespace KeySaver
             InitializeComponent();
 
             var loadErrors = new List<string>();
+            bool firstRun = !storage.HasPreferences();
             try
             {
                 sessions = storage.LoadHistory() ?? Array.Empty<SessionRecord>();
@@ -65,6 +66,17 @@ namespace KeySaver
             IdleRule.IsChecked = preferences.IdleRule;
             IdleSecondsInput.Text = preferences.IdleSeconds.ToString(CultureInfo.InvariantCulture);
             IdleSecondsInput.IsEnabled = preferences.IdleRule;
+            try
+            {
+                if (firstRun) WindowsAutostart.Set(true);
+                Autostart.IsChecked = WindowsAutostart.IsEnabled();
+                if (Autostart.IsChecked == true) WindowsAutostart.Set(true);
+            }
+            catch (Exception error) when (error is UnauthorizedAccessException || error is System.Security.SecurityException || error is System.IO.IOException)
+            {
+                Autostart.IsChecked = false;
+                loadErrors.Add("Не удалось прочитать автозапуск. " + error.Message);
+            }
 
             recorder = new KeyboardRecorder(OnSessionRecorded);
             recorder.Apply(preferences);
@@ -80,7 +92,15 @@ namespace KeySaver
             RenderScope();
             UpdateExportOptions();
             ShowImportFile();
-            if (loadErrors.Count > 0) Loaded += (sender, args) => ShowError(string.Join("\n\n", loadErrors));
+            if (loadErrors.Count > 0 || !UiPassword.IsSet(preferences))
+            {
+                Loaded += (sender, args) =>
+                {
+                    if (loadErrors.Count > 0) ShowError(string.Join("\n\n", loadErrors));
+                    if (!UiPassword.IsSet(preferences) && !PromptCreatePassword()) ExitApplication();
+                };
+            }
+            CreateTrayIcon();
         }
 
         private void OnSessionRecorded(SessionRecord rec)
@@ -97,12 +117,40 @@ namespace KeySaver
             }
         }
 
+        private void ChangeAutostart(object sender, RoutedEventArgs e)
+        {
+            if (!ready) return;
+            try
+            {
+                WindowsAutostart.Set(Autostart.IsChecked == true);
+            }
+            catch (Exception error) when (error is UnauthorizedAccessException || error is System.Security.SecurityException || error is System.IO.IOException)
+            {
+                ready = false;
+                Autostart.IsChecked = WindowsAutostart.IsEnabled();
+                ready = true;
+                ShowError("Не удалось изменить автозапуск. " + error.Message);
+            }
+        }
+
         private void ChangeRecordingEnabled(object sender, RoutedEventArgs e)
         {
             if (!ready) return;
-            preferences.RecordingEnabled = RecordingEnabled.IsChecked == true;
-            SessionRuleControls.IsEnabled = preferences.RecordingEnabled;
-            if (preferences.RecordingEnabled)
+            SetRecording(RecordingEnabled.IsChecked == true);
+        }
+
+        private void SetRecording(bool enabled)
+        {
+            if (!ready) return;
+            if (RecordingEnabled.IsChecked != enabled)
+            {
+                ready = false;
+                RecordingEnabled.IsChecked = enabled;
+                ready = true;
+            }
+            preferences.RecordingEnabled = enabled;
+            SessionRuleControls.IsEnabled = enabled;
+            if (enabled)
             {
                 recorder.Apply(preferences);
                 var recorderError = recorder.Start();
@@ -114,6 +162,7 @@ namespace KeySaver
                 if (pending != null) OnSessionRecorded(pending);
             }
             SavePreferences();
+            UpdateTrayMenu();
         }
 
         private void ChangeMode(object sender, RoutedEventArgs e)
@@ -142,6 +191,7 @@ namespace KeySaver
 
         protected override void OnClosed(EventArgs e)
         {
+            DisposeTrayIcon();
             var pending = recorder?.Stop();
             recorder?.Dispose();
             recorder = null;
@@ -154,5 +204,32 @@ namespace KeySaver
         }
 
 
+    }
+
+    internal static class WindowsAutostart
+    {
+        private const string KeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        private const string ValueName = "KeySaver";
+
+        public static bool IsEnabled()
+        {
+            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(KeyPath, false))
+                return key != null && key.GetValue(ValueName) is string path && path.Length > 0;
+        }
+
+        public static void Set(bool enabled)
+        {
+            using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(KeyPath))
+            {
+                if (key == null) throw new System.IO.IOException("Не удалось открыть параметры автозапуска.");
+                if (!enabled)
+                {
+                    key.DeleteValue(ValueName, false);
+                    return;
+                }
+                var exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                key.SetValue(ValueName, "\"" + exe + "\"");
+            }
+        }
     }
 }
