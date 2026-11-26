@@ -10,7 +10,6 @@ namespace KeySaver
     public partial class MainWindow : Window
     {
         private readonly WorkspaceStorage storage;
-        private IReadOnlyList<SessionRecord> sessions;
         private Preferences preferences;
         private SessionView preview;
         private string appFilter = "all";
@@ -19,7 +18,7 @@ namespace KeySaver
         private bool oldestFirst;
         private bool canSaveHistory = true;
         private bool canSavePreferences = true;
-        private KeyboardRecorder recorder; // added
+        private KeyboardRecorder recorder;
 
         public MainWindow() : this(new WorkspaceStorage()) { }
 
@@ -30,17 +29,6 @@ namespace KeySaver
 
             var loadErrors = new List<string>();
             bool firstRun = !storage.HasPreferences();
-            try
-            {
-                sessions = storage.LoadHistory() ?? Array.Empty<SessionRecord>();
-            }
-            catch (Exception error) when (IsStorageError(error))
-            {
-                sessions = Array.Empty<SessionRecord>();
-                canSaveHistory = false;
-                loadErrors.Add("Не удалось открыть локальную историю. " + error.Message);
-            }
-
             try
             {
                 preferences = storage.LoadPreferences();
@@ -80,11 +68,6 @@ namespace KeySaver
 
             recorder = new KeyboardRecorder(OnSessionRecorded);
             recorder.Apply(preferences);
-            if (preferences.RecordingEnabled)
-            {
-                var recorderError = recorder.Start();
-                if (!string.IsNullOrEmpty(recorderError)) loadErrors.Add(recorderError);
-            }
 
             ready = true;
             ApplyTheme();
@@ -92,14 +75,19 @@ namespace KeySaver
             RenderScope();
             UpdateExportOptions();
             ShowImportFile();
-            if (loadErrors.Count > 0 || !UiPassword.IsSet(preferences))
+            Loaded += (sender, args) =>
             {
-                Loaded += (sender, args) =>
+                if (loadErrors.Count > 0) ShowError(string.Join("\n\n", loadErrors));
+                if (!UiPassword.IsSet(preferences))
                 {
-                    if (loadErrors.Count > 0) ShowError(string.Join("\n\n", loadErrors));
-                    if (!UiPassword.IsSet(preferences) && !PromptCreatePassword()) ExitApplication();
-                };
-            }
+                    if (!PromptCreatePassword()) ExitApplication();
+                    else OpenHistory();
+                }
+                else
+                {
+                    LockInterface(null, null);
+                }
+            };
             CreateTrayIcon();
         }
 
@@ -110,7 +98,7 @@ namespace KeySaver
                 Dispatcher.BeginInvoke(new Action(() => OnSessionRecorded(rec)));
                 return;
             }
-            try { SaveHistory(sessions.Concat(new[] { rec }).ToArray()); }
+            try { storage.AddSession(rec); RenderHistory(false); }
             catch (Exception error) when (IsStorageError(error))
             {
                 ShowError("Не удалось сохранить сессию. " + error.Message);
@@ -195,9 +183,9 @@ namespace KeySaver
             var pending = recorder?.Stop();
             recorder?.Dispose();
             recorder = null;
-            if (pending != null && canSaveHistory)
+            if (pending != null && historyReady)
             {
-                try { storage.SaveHistory(sessions.Concat(new[] { pending }).ToArray()); }
+                try { storage.AddSession(pending); }
                 catch (Exception error) when (IsStorageError(error)) { }
             }
             base.OnClosed(e);

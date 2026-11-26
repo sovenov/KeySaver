@@ -65,7 +65,7 @@ namespace KeySaver
             SetTransferStatus(ExportStatus, "Подготовка файла…");
             try
             {
-                var snapshot = sessions;
+                var snapshot = storage.AllSessions();
                 string path = dialog.FileName;
                 await Task.Run(() =>
                 {
@@ -143,12 +143,11 @@ namespace KeySaver
             try
             {
                 var decoded = await Task.Run(() => document.Decode(password));
-                var identities = new System.Collections.Generic.HashSet<Tuple<string, DateTimeOffset, DateTimeOffset, string>>(sessions.Select(SessionIdentity));
-                var added = decoded.Where(record => identities.Add(SessionIdentity(record))).ToArray();
-                if (added.Length > 0 && !SaveHistory(sessions.Concat(added).ToArray())) return;
+                int added = await Task.Run(() => storage.ImportSessions(decoded));
+                RenderHistory(false);
 
                 ImportPassword.Clear();
-                SetTransferStatus(ImportStatus, added.Length > 0 ? $"Импортировано: {SessionLabel(added.Length)}." :
+                SetTransferStatus(ImportStatus, added > 0 ? $"Импортировано: {SessionLabel(added)}." :
                     decoded.Count == 0 ? "В файле нет сессий." : "Все сессии из файла уже есть в истории.");
             }
             catch (Exception error) when (IsStorageError(error))

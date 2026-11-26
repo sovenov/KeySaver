@@ -88,24 +88,24 @@ namespace KeySaver
             rendering = true;
             try
             {
-                var kept = new HashSet<SessionRecord>();
-                SessionRecord current = null;
+                var kept = new HashSet<long>();
+                long? current = null;
                 if (!selectFirst)
                 {
-                    foreach (var item in SessionList.SelectedItems.OfType<SessionView>()) kept.Add(item.Record);
-                    current = preview?.Record;
+                    foreach (var item in SessionList.SelectedItems.OfType<SessionView>()) kept.Add(item.Record.Id);
+                    if (preview != null) current = preview.Record.Id;
                 }
 
                 var appQuery = AppSearch.Text.Trim();
-                var rows = new List<AppItem> { HistoryCatalog.AllApps(sessions.Count) };
-                foreach (var group in sessions.GroupBy(session => session.App)
-                    .OrderBy(group => HistoryCatalog.Find(group.Key).Name, StringComparer.CurrentCultureIgnoreCase))
+                int total = historyReady ? storage.SessionCount() : 0;
+                var rows = new List<AppItem> { HistoryCatalog.AllApps(total) };
+                if (historyReady)
                 {
-                    string exe = null;
-                    foreach (var session in group)
-                        if (!string.IsNullOrEmpty(session.Path)) exe = session.Path;
-                    var item = HistoryCatalog.Find(group.Key, group.Count(), exe);
-                    if (appQuery.Length == 0 || item.Matches(appQuery)) rows.Add(item);
+                    foreach (var group in storage.Apps().OrderBy(group => HistoryCatalog.Find(group.App).Name, StringComparer.CurrentCultureIgnoreCase))
+                    {
+                        var item = HistoryCatalog.Find(group.App, group.Count, group.Path);
+                        if (appQuery.Length == 0 || item.Matches(appQuery)) rows.Add(item);
+                    }
                 }
                 EmptyAppSearch.Visibility = appQuery.Length > 0 && rows.Count == 1 ? Visibility.Visible : Visibility.Collapsed;
                 AppList.ItemsSource = rows;
@@ -130,18 +130,10 @@ namespace KeySaver
 
                 var text = TextSearch.Text.Trim();
                 var views = new List<SessionView>();
-                if (!reversed)
+                if (!reversed && historyReady)
                 {
-                    foreach (var record in sessions)
-                    {
-                        if (appFilter != "all" && !string.Equals(record.App, appFilter, StringComparison.OrdinalIgnoreCase)) continue;
-                        if (text.Length > 0 && (record.Text == null || record.Text.IndexOf(text, StringComparison.CurrentCultureIgnoreCase) < 0))
-                            continue;
-                        var day = record.StartedAt.LocalDateTime.Date;
-                        if (from.HasValue && day < from.Value.Date) continue;
-                        if (to.HasValue && day > to.Value.Date) continue;
-                        views.Add(new SessionView(record, HistoryCatalog.Find(record.App), today, oldestFirst));
-                    }
+                    foreach (var record in storage.Query(appFilter, from, to, text))
+                        views.Add(new SessionView(record, HistoryCatalog.Find(record.App, 0, record.Path), today, oldestFirst));
                 }
 
                 var listed = new ListCollectionView(views);
@@ -158,15 +150,15 @@ namespace KeySaver
                 else
                 {
                     foreach (SessionView item in listed)
-                        if (kept.Contains(item.Record)) SessionList.SelectedItems.Add(item);
+                        if (kept.Contains(item.Record.Id)) SessionList.SelectedItems.Add(item);
                 }
 
-                var selected = SessionList.SelectedItems.OfType<SessionView>().FirstOrDefault(item => item.Record == current)
+                var selected = SessionList.SelectedItems.OfType<SessionView>().FirstOrDefault(item => current.HasValue && item.Record.Id == current.Value)
                     ?? SessionList.SelectedItem as SessionView;
                 ShowPreview(selected);
                 UpdateCaption();
                 bool shown = listed.Count > 0;
-                bool any = sessions.Count > 0;
+                bool any = total > 0;
                 bool filtered = appFilter != "all" || tag != "all" || TextSearch.Text.Length > 0;
                 SessionList.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
                 EmptyHistory.Visibility = shown ? Visibility.Collapsed : Visibility.Visible;
@@ -192,15 +184,6 @@ namespace KeySaver
             string text = SessionLabel(SessionList.Items.Count);
             SessionCount.Text = selected > 1 ? text + " · Выбрано " + selected : text;
             DeleteButton.IsEnabled = selected > 0;
-        }
-
-        private bool SaveHistory(IReadOnlyList<SessionRecord> records)
-        {
-            if (!canSaveHistory) throw new IOException("Локальная история недоступна для записи.");
-            storage.SaveHistory(records);
-            sessions = records;
-            RenderHistory(false);
-            return true;
         }
 
         private void PublishRules()

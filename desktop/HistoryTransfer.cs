@@ -14,15 +14,17 @@ namespace KeySaver
 {
     public sealed class SessionRecord
     {
-        public SessionRecord(string app, DateTimeOffset startedAt, DateTimeOffset endedAt, string text, string path = null)
+        public SessionRecord(string app, DateTimeOffset startedAt, DateTimeOffset endedAt, string text, string path = null, long id = 0)
         {
             App = app;
             StartedAt = startedAt.ToUniversalTime();
             EndedAt = endedAt.ToUniversalTime();
             Text = text;
             Path = string.IsNullOrWhiteSpace(path) ? null : path;
+            Id = id;
         }
 
+        public long Id { get; }
         public string App { get; }
         public DateTimeOffset StartedAt { get; }
         public DateTimeOffset EndedAt { get; }
@@ -140,6 +142,31 @@ namespace KeySaver
                 iv = Convert.ToBase64String(nonce),
                 content = Convert.ToBase64String(content)
             }, "Размер файла превышает 16 МБ.");
+        }
+
+        internal static byte[] Seal(byte[] key, byte[] plaintext, byte[] associatedData, out byte[] nonce)
+        {
+            if (key == null || key.Length != KeySize) throw new ArgumentException("Нет ключа истории.", nameof(key));
+            nonce = new byte[NonceSize];
+            using (var random = RandomNumberGenerator.Create())
+                random.GetBytes(nonce);
+            var tag = new byte[TagSize];
+            var ciphertext = CngArchiveCrypto.Transform(plaintext, key, nonce, associatedData, tag, true);
+            var content = new byte[ciphertext.Length + tag.Length];
+            Buffer.BlockCopy(ciphertext, 0, content, 0, ciphertext.Length);
+            Buffer.BlockCopy(tag, 0, content, ciphertext.Length, tag.Length);
+            return content;
+        }
+
+        internal static byte[] Open(byte[] key, byte[] nonce, byte[] content, byte[] associatedData)
+        {
+            if (key == null || key.Length != KeySize) throw new ArgumentException("Нет ключа истории.", nameof(key));
+            if (content == null || content.Length < TagSize) throw new InvalidDataException("Файл истории повреждён.");
+            var ciphertext = new byte[content.Length - TagSize];
+            var tag = new byte[TagSize];
+            Buffer.BlockCopy(content, 0, ciphertext, 0, ciphertext.Length);
+            Buffer.BlockCopy(content, ciphertext.Length, tag, 0, tag.Length);
+            return CngArchiveCrypto.Transform(ciphertext, key, nonce, associatedData, tag, false);
         }
 
         public static TransferDocument Read(string source)

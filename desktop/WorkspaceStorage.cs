@@ -46,6 +46,9 @@ namespace KeySaver
         [DataMember(Name = "passwordHash")]
         public string PasswordHash { get; set; }
 
+        [DataMember(Name = "passwordVersion")]
+        public int PasswordVersion { get; set; }
+
         public Preferences()
         {
             SetDefaults();
@@ -71,14 +74,16 @@ namespace KeySaver
             IdleSeconds = 5;
             PasswordSalt = null;
             PasswordHash = null;
+            PasswordVersion = 0;
         }
     }
 
     public sealed class WorkspaceStorage
     {
         private static readonly Encoding Utf8 = new UTF8Encoding(false, true);
-        private readonly string historyPath;
+        private readonly string directory;
         private readonly string preferencesPath;
+        private HistoryDatabase history;
 
         public WorkspaceStorage()
             : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KeySaver"))
@@ -87,28 +92,58 @@ namespace KeySaver
 
         public WorkspaceStorage(string directory)
         {
-            var fullDirectory = Path.GetFullPath(directory);
-            historyPath = Path.Combine(fullDirectory, "history.json");
-            preferencesPath = Path.Combine(fullDirectory, "preferences.json");
+            this.directory = Path.GetFullPath(directory);
+            preferencesPath = Path.Combine(this.directory, "preferences.json");
         }
 
-        public IReadOnlyList<SessionRecord> LoadHistory()
+        internal void OpenHistory(byte[] key)
         {
-            using (var stream = OpenIfPresent(historyPath))
-            {
-                if (stream == null)
-                    return null;
-                if (stream.Length > HistoryTransfer.MaxFileBytes)
-                    throw new InvalidDataException("Файл истории слишком большой.");
-
-                using (var reader = new StreamReader(stream, Utf8))
-                    return HistoryTransfer.Read(reader.ReadToEnd()).Decode(string.Empty);
-            }
+            if (history != null) history.Dispose();
+            history = new HistoryDatabase(Path.Combine(directory, "history.db"), key);
         }
 
-        public void SaveHistory(IReadOnlyList<SessionRecord> records)
+        internal int SessionCount()
         {
-            WriteText(historyPath, HistoryTransfer.ExportJson(records));
+            return history == null ? 0 : history.Count();
+        }
+
+        internal IReadOnlyList<AppSummary> Apps()
+        {
+            return history == null ? Array.Empty<AppSummary>() : history.Apps();
+        }
+
+        internal IReadOnlyList<SessionRecord> Query(string app, DateTime? from, DateTime? to, string text)
+        {
+            return history == null ? Array.Empty<SessionRecord>() : history.Query(app, from, to, text ?? string.Empty);
+        }
+
+        internal IReadOnlyList<SessionRecord> AllSessions()
+        {
+            return history == null ? Array.Empty<SessionRecord>() : history.All();
+        }
+
+        internal void AddSession(SessionRecord record)
+        {
+            if (history == null) throw new InvalidOperationException("История ещё не открыта.");
+            history.Add(record);
+        }
+
+        internal int ImportSessions(IReadOnlyList<SessionRecord> records)
+        {
+            if (history == null) throw new InvalidOperationException("История ещё не открыта.");
+            return history.Import(records);
+        }
+
+        internal void DeleteSessions(IEnumerable<long> ids)
+        {
+            if (history == null) throw new InvalidOperationException("История ещё не открыта.");
+            history.Delete(ids);
+        }
+
+        internal void Rekey(byte[] key)
+        {
+            if (history == null) throw new InvalidOperationException("История ещё не открыта.");
+            history.Rekey(key);
         }
 
         internal static void WriteText(string path, string content)

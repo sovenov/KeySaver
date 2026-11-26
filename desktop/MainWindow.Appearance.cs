@@ -105,7 +105,7 @@ namespace KeySaver
             dialog.Loaded += (window, args) => no.Focus();
             if (dialog.ShowDialog() != true) return;
 
-            try { SaveHistory(sessions.Where(session => !selected.Contains(session)).ToArray()); }
+            try { storage.DeleteSessions(selected.Select(session => session.Id)); RenderHistory(false); }
             catch (Exception error) when (IsStorageError(error)) { ShowError("Не удалось удалить сессии. " + error.Message); }
         }
 
@@ -172,7 +172,8 @@ namespace KeySaver
                 || error is System.IO.InvalidDataException
                 || error is System.Runtime.Serialization.SerializationException
                 || error is System.Security.Cryptography.CryptographicException
-                || error is System.Text.DecoderFallbackException;
+                || error is System.Text.DecoderFallbackException
+                || error is Microsoft.Data.Sqlite.SqliteException;
         }
 
         private static string SessionLabel(int count)

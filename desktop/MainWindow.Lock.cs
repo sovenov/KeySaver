@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -8,6 +9,8 @@ namespace KeySaver
     {
         private Visibility historyBeforeLock = Visibility.Visible;
         private Visibility settingsBeforeLock = Visibility.Collapsed;
+
+        private bool historyReady;
 
         private void LockInterface(object sender, RoutedEventArgs e)
         {
@@ -25,7 +28,18 @@ namespace KeySaver
 
         private void UnlockInterface(object sender, RoutedEventArgs e)
         {
-            if (!UiPassword.Matches(preferences, UnlockPassword.Password))
+            if (!historyReady)
+            {
+                if (!UiPassword.Open(preferences, UnlockPassword.Password, out var key, out var upgraded))
+                {
+                    UnlockError.Text = "Неверный пароль.";
+                    return;
+                }
+                HistorySecrets.Install(key);
+                if (upgraded) SavePreferences();
+                if (!OpenHistory()) return;
+            }
+            else if (!UiPassword.Matches(preferences, UnlockPassword.Password))
             {
                 UnlockError.Text = "Неверный пароль.";
                 return;
@@ -36,6 +50,28 @@ namespace KeySaver
             AppHeader.Visibility = Visibility.Visible;
             HistoryView.Visibility = historyBeforeLock;
             SettingsView.Visibility = settingsBeforeLock;
+        }
+
+        private bool OpenHistory()
+        {
+            try
+            {
+                storage.OpenHistory(HistorySecrets.Key);
+                historyReady = true;
+                RenderHistory(true);
+                if (preferences.RecordingEnabled)
+                {
+                    var recorderError = recorder.Start();
+                    if (!string.IsNullOrEmpty(recorderError)) ShowError(recorderError);
+                }
+                return true;
+            }
+            catch (Exception error) when (IsStorageError(error))
+            {
+                canSaveHistory = false;
+                UnlockError.Text = "Не удалось открыть историю. " + error.Message;
+                return false;
+            }
         }
 
         private void UnlockPasswordKey(object sender, KeyEventArgs e)
@@ -55,8 +91,33 @@ namespace KeySaver
                 SetPasswordStatus(NewPassword.Password.Length == 0 ? "Введите новый пароль." : "Новые пароли не совпадают.", true);
                 return;
             }
-            UiPassword.Set(preferences, NewPassword.Password);
-            SavePreferences();
+            var previousSalt = preferences.PasswordSalt;
+            var previousHash = preferences.PasswordHash;
+            var previousVersion = preferences.PasswordVersion;
+            var previousKey = HistorySecrets.Key;
+            UiPassword.Set(preferences, NewPassword.Password, out var key);
+            bool rekeyed = false;
+            try
+            {
+                storage.Rekey(key);
+                rekeyed = true;
+                SavePreferences();
+                HistorySecrets.Install(key);
+            }
+            catch (Exception error) when (IsStorageError(error))
+            {
+                preferences.PasswordSalt = previousSalt;
+                preferences.PasswordHash = previousHash;
+                preferences.PasswordVersion = previousVersion;
+                if (rekeyed && previousKey != null)
+                {
+                    try { storage.Rekey(previousKey); }
+                    catch (Exception) { }
+                }
+                if (previousKey != null) HistorySecrets.Install(previousKey);
+                SetPasswordStatus("Не удалось сменить пароль. " + error.Message, true);
+                return;
+            }
             CurrentPassword.Clear();
             NewPassword.Clear();
             RepeatPassword.Clear();
@@ -78,7 +139,7 @@ namespace KeySaver
             content.Children.Add(new TextBlock { Text = "Задайте пароль", FontSize = 18, FontWeight = FontWeights.SemiBold });
             content.Children.Add(new TextBlock
             {
-                Text = "Он понадобится, чтобы разблокировать окно.",
+                Text = "Он защищает локальную историю и нужен, чтобы открыть окно.",
                 Foreground = PaletteBrush("MutedBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 14)
             });
             content.Children.Add(new TextBlock { Text = "Пароль", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) });
@@ -106,7 +167,8 @@ namespace KeySaver
                     error.Visibility = Visibility.Visible;
                     return;
                 }
-                UiPassword.Set(preferences, password.Password);
+                UiPassword.Set(preferences, password.Password, out var key);
+                HistorySecrets.Install(key);
                 SavePreferences();
                 dialog.DialogResult = true;
             };

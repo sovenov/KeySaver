@@ -43,6 +43,7 @@ Name: "netframework"; Description: "Установить Microsoft .NET Framewor
 
 [Files]
 Source: "..\bin\Release\net48\KeySaver.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\Release\net48\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 #if BundleNet == "1"
 Source: "..\c#\NDP48-x86-x64-AllOS-ENU.exe"; DestDir: "{tmp}"; DestName: "NDP48-x86-x64-AllOS-ENU.exe"; Flags: dontcopy nocompression
 #endif
@@ -77,6 +78,9 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM KeySaver.exe /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Folder := UserDataFolder;
   DeleteFile(Folder + '\history.json');
+  DeleteFile(Folder + '\history.db');
+  DeleteFile(Folder + '\history.db-wal');
+  DeleteFile(Folder + '\history.db-shm');
   DeleteFile(Folder + '\preferences.json');
 end;
 
