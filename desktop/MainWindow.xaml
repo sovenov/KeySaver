@@ -690,7 +690,6 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="5*"/>
                                 <ColumnDefinition Width="4*" MinWidth="144" MaxWidth="196"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="TextSearch" Style="{StaticResource SearchBox}" Tag="Поиск по тексту"
                                      AutomationProperties.Name="Поиск по тексту" TextChanged="FilterChanged"/>
@@ -706,8 +705,6 @@
                                 <Path Style="{StaticResource IconShape}" Data="{StaticResource CalendarGeometry}"
                                       Width="16" Height="16" Margin="10,0,0,0" HorizontalAlignment="Left" IsHitTestVisible="False"/>
                             </Grid>
-                            <Button x:Name="ResetFiltersButton" Grid.Column="2" Style="{StaticResource RoundedButton}"
-                                    Margin="8,0,0,0" Padding="9,5" Content="Сбросить" Visibility="Collapsed" Click="ResetFilters"/>
                         </Grid>
                         <StackPanel x:Name="DateRange" Visibility="Collapsed" Margin="0,10,0,0">
                             <WrapPanel>

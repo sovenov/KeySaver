@@ -42,7 +42,6 @@ namespace KeySaver
 
             DateFilter.SelectedIndex = 0;
             ExportFormat.SelectedIndex = 0;
-            ScopeChoice.ItemsSource = HistoryCatalog.KnownApps.Concat(new[] { HistoryCatalog.CustomApp() }).ToArray();
             AllMode.IsChecked = preferences.Mode == "all";
             ExceptMode.IsChecked = preferences.Mode == "except";
             OnlyMode.IsChecked = preferences.Mode == "only";

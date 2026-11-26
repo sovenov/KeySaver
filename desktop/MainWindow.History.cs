@@ -17,6 +17,7 @@ namespace KeySaver
         {
             HistoryView.Visibility = Visibility.Collapsed;
             SettingsView.Visibility = Visibility.Visible;
+            FillScopeChoices();
         }
 
         private void CloseSettings(object sender, RoutedEventArgs e)
@@ -165,7 +166,7 @@ namespace KeySaver
                 EmptyHistoryTitle.Text = any ? "Сессии не найдены" : "Сессий пока нет";
                 EmptyHistoryHint.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
                 EmptyHistoryReset.Visibility = any && filtered ? Visibility.Visible : Visibility.Collapsed;
-                ResetFiltersButton.Visibility = filtered ? Visibility.Visible : Visibility.Collapsed;
+                FillScopeChoices();
             }
             finally { rendering = false; }
         }
@@ -184,6 +185,42 @@ namespace KeySaver
             string text = SessionLabel(SessionList.Items.Count);
             SessionCount.Text = selected > 1 ? text + " · Выбрано " + selected : text;
             DeleteButton.IsEnabled = selected > 0;
+        }
+
+        private void FillScopeChoices()
+        {
+            var apps = new List<AppItem>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (historyReady)
+            {
+                foreach (var group in storage.Apps())
+                {
+                    var item = HistoryCatalog.Find(group.App, group.Count, group.Path);
+                    var identity = string.IsNullOrEmpty(item.Path) ? item.Key : item.Path;
+                    if (seen.Add(identity)) apps.Add(item);
+                }
+            }
+            if (preferences != null)
+            {
+                foreach (var path in preferences.ExceptPaths.Concat(preferences.OnlyPaths))
+                {
+                    if (!seen.Add(path)) continue;
+                    apps.Add(new AppItem(HistoryCatalog.KeyForProcess(path), System.IO.Path.GetFileNameWithoutExtension(path), path, null));
+                }
+            }
+            apps.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.CurrentCultureIgnoreCase));
+            var selected = ScopeChoice.SelectedItem as AppItem;
+            var wasRendering = rendering;
+            rendering = true;
+            try
+            {
+                ScopeChoice.ItemsSource = apps;
+                ScopeChoice.SelectedItem = selected == null ? null : apps.Find(item => string.Equals(item.Path, selected.Path, StringComparison.OrdinalIgnoreCase) || item.Key == selected.Key);
+            }
+            finally
+            {
+                rendering = wasRendering;
+            }
         }
 
         private void PublishRules()
@@ -251,6 +288,7 @@ namespace KeySaver
             CustomPathField.Visibility = Visibility.Collapsed;
             ScopeMessage.Text = string.Empty;
             RenderScope();
+            FillScopeChoices();
             SavePreferences();
             PublishRules();
         }
@@ -261,6 +299,7 @@ namespace KeySaver
             var list = preferences.Mode == "except" ? preferences.ExceptPaths : preferences.OnlyPaths;
             list.RemoveAll(entry => string.Equals(entry, path, StringComparison.OrdinalIgnoreCase));
             RenderScope();
+            FillScopeChoices();
             SavePreferences();
             PublishRules();
         }

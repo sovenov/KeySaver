@@ -66,7 +66,7 @@ namespace KeySaver
                 }
                 return true;
             }
-            catch (Exception error) when (IsStorageError(error))
+            catch (Exception error) when (IsStorageError(error) || error is TypeInitializationException || error is System.IO.FileLoadException || error is DllNotFoundException)
             {
                 canSaveHistory = false;
                 UnlockError.Text = "Не удалось открыть историю. " + error.Message;
