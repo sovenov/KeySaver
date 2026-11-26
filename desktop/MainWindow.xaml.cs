@@ -1,0 +1,158 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+
+namespace KeySaver
+{
+    public partial class MainWindow : Window
+    {
+        private readonly WorkspaceStorage storage;
+        private IReadOnlyList<SessionRecord> sessions;
+        private Preferences preferences;
+        private SessionView preview;
+        private string appFilter = "all";
+        private bool ready;
+        private bool rendering;
+        private bool oldestFirst;
+        private bool canSaveHistory = true;
+        private bool canSavePreferences = true;
+        private KeyboardRecorder recorder; // added
+
+        public MainWindow() : this(new WorkspaceStorage()) { }
+
+        internal MainWindow(WorkspaceStorage storage)
+        {
+            this.storage = storage;
+            InitializeComponent();
+
+            var loadErrors = new List<string>();
+            try
+            {
+                sessions = storage.LoadHistory() ?? Array.Empty<SessionRecord>();
+            }
+            catch (Exception error) when (IsStorageError(error))
+            {
+                sessions = Array.Empty<SessionRecord>();
+                canSaveHistory = false;
+                loadErrors.Add("Не удалось открыть локальную историю. " + error.Message);
+            }
+
+            try
+            {
+                preferences = storage.LoadPreferences();
+            }
+            catch (Exception error) when (IsStorageError(error))
+            {
+                preferences = new Preferences();
+                canSavePreferences = false;
+                loadErrors.Add("Не удалось открыть файл настроек. " + error.Message);
+            }
+
+            DateFilter.SelectedIndex = 0;
+            ExportFormat.SelectedIndex = 0;
+            ScopeChoice.ItemsSource = HistoryCatalog.KnownApps.Concat(new[] { HistoryCatalog.CustomApp() }).ToArray();
+            AllMode.IsChecked = preferences.Mode == "all";
+            ExceptMode.IsChecked = preferences.Mode == "except";
+            OnlyMode.IsChecked = preferences.Mode == "only";
+            RecordingEnabled.IsChecked = preferences.RecordingEnabled;
+            SessionRuleControls.IsEnabled = preferences.RecordingEnabled;
+            MouseRule.IsChecked = preferences.MouseRule;
+            TabRule.IsChecked = preferences.TabRule;
+            EnterRule.IsChecked = preferences.EnterRule;
+            IdleRule.IsChecked = preferences.IdleRule;
+            IdleSecondsInput.Text = preferences.IdleSeconds.ToString(CultureInfo.InvariantCulture);
+            IdleSecondsInput.IsEnabled = preferences.IdleRule;
+
+            recorder = new KeyboardRecorder(OnSessionRecorded);
+            recorder.Apply(preferences);
+            if (preferences.RecordingEnabled)
+            {
+                var recorderError = recorder.Start();
+                if (!string.IsNullOrEmpty(recorderError)) loadErrors.Add(recorderError);
+            }
+
+            ready = true;
+            ApplyTheme();
+            RenderHistory(true);
+            RenderScope();
+            UpdateExportOptions();
+            ShowImportFile();
+            if (loadErrors.Count > 0) Loaded += (sender, args) => ShowError(string.Join("\n\n", loadErrors));
+        }
+
+        private void OnSessionRecorded(SessionRecord rec)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnSessionRecorded(rec)));
+                return;
+            }
+            try { SaveHistory(sessions.Concat(new[] { rec }).ToArray()); }
+            catch (Exception error) when (IsStorageError(error))
+            {
+                ShowError("Не удалось сохранить сессию. " + error.Message);
+            }
+        }
+
+        private void ChangeRecordingEnabled(object sender, RoutedEventArgs e)
+        {
+            if (!ready) return;
+            preferences.RecordingEnabled = RecordingEnabled.IsChecked == true;
+            SessionRuleControls.IsEnabled = preferences.RecordingEnabled;
+            if (preferences.RecordingEnabled)
+            {
+                recorder.Apply(preferences);
+                var recorderError = recorder.Start();
+                if (!string.IsNullOrEmpty(recorderError)) ShowError(recorderError);
+            }
+            else
+            {
+                var pending = recorder.Stop();
+                if (pending != null) OnSessionRecorded(pending);
+            }
+            SavePreferences();
+        }
+
+        private void ChangeMode(object sender, RoutedEventArgs e)
+        {
+            if (!ready) return;
+            preferences.Mode = (string)((RadioButton)sender).Tag;
+            ScopeChoice.SelectedItem = null;
+            CustomPathInput.Clear();
+            RenderScope();
+            SavePreferences();
+            PublishRules();
+        }
+
+        private void ChangeRules(object sender, RoutedEventArgs e)
+        {
+            if (!ready) return;
+            preferences.MouseRule = MouseRule.IsChecked == true;
+            preferences.TabRule = TabRule.IsChecked == true;
+            preferences.EnterRule = EnterRule.IsChecked == true;
+            preferences.IdleRule = IdleRule.IsChecked == true;
+            IdleSecondsInput.IsEnabled = preferences.IdleRule;
+            ValidateIdleSeconds();
+            SavePreferences();
+            PublishRules();
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            var pending = recorder?.Stop();
+            recorder?.Dispose();
+            recorder = null;
+            if (pending != null && canSaveHistory)
+            {
+                try { storage.SaveHistory(sessions.Concat(new[] { pending }).ToArray()); }
+                catch (Exception error) when (IsStorageError(error)) { }
+            }
+            base.OnClosed(e);
+        }
+
+
+    }
+}
