@@ -69,4 +69,4 @@ dotnet build KeySaver.csproj -c Release
 
 Оба появятся в `installer/output`.
 
-`example_preview_html/index.html` — старый веб-макет интерфейса. На работу программы он не влияет.
+Веб-макет интерфейса лежит в ветке `gh-pages`. На работу программы он не влияет. Эту ветку можно открыть через GitHub Pages.
