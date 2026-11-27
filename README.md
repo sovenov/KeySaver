@@ -41,7 +41,7 @@ Enter сам по себе сессию не закрывает, он прост
 
 Код открытый. Параноикам можно скормить репозиторий любой языковой модели и спросить, ходит ли программа в сеть и что она пишет на диск. Можно не верить ни релизу, ни мне и собрать билд самому. Так даже спокойнее.
 
-Стек: C#, WPF, .NET Framework 4.8, Windows x64. Нижняя планка — Windows 7 SP1. Окно — `desktop/MainWindow.xaml`. Запись клавиатуры — низкоуровневый хук в `desktop/KeyboardRecorder.cs`, мышь там же, чтобы закрывать сессию по левому клику. Своего окна программа не пишет.
+Стек: C#, WPF, .NET Framework 4.8, Windows x64. Нижняя планка — Windows 7 SP1. Окно — `MainWindow.xaml`. Запись клавиатуры — низкоуровневый хук в `KeyboardRecorder.cs`, мышь там же, чтобы закрывать сессию по левому клику. Своего окна программа не пишет.
 
 История — SQLite, файл `%LocalAppData%\KeySaver\history.db`. Две таблицы. Черновик обновляется на каждый символ. Основная таблица получает запись, когда сессия закрывается по правилу, либо при следующем запуске, если процесс умер и черновик остался. Текст сессии шифруется AES-256-GCM. Ключ получается из пароля через PBKDF2-SHA256 на 100 000 итераций и живёт только в памяти, пока программа запущена. В `preferences.json` лежат соль и проверочный хеш, не пароль и не ключ.
 
@@ -50,23 +50,23 @@ Enter сам по себе сессию не закрывает, он прост
 Сборка, если хочешь свой exe. Нужны Windows и .NET Framework 4.8 Developer Pack.
 
 ```powershell
-dotnet build desktop/KeySaver.csproj -c Release
+dotnet build KeySaver.csproj -c Release
 ```
 
-Готовый файл: `desktop/bin/Release/net48/KeySaver.exe`. Рядом должны лежать dll от SQLite, они появляются сами при сборке.
+Готовый файл: `bin/Release/net48/KeySaver.exe`. Рядом должны лежать dll от SQLite, они появляются сами при сборке.
 
-Установщики собираются Inno Setup 7 из `desktop/installer/KeySaver.iss`. Без .NET в комплекте:
+Установщики собираются Inno Setup 7 из `installer/KeySaver.iss`. Без .NET в комплекте:
 
 ```powershell
-& "C:\Program Files\Inno Setup 7\ISCC.exe" desktop/installer/KeySaver.iss
+& "C:\Program Files\Inno Setup 7\ISCC.exe" installer/KeySaver.iss
 ```
 
-С .NET Framework 4.8 внутри (файл `desktop/c#/NDP48-x86-x64-AllOS-ENU.exe`):
+С .NET Framework 4.8 внутри (файл `c#/NDP48-x86-x64-AllOS-ENU.exe`):
 
 ```powershell
-& "C:\Program Files\Inno Setup 7\ISCC.exe" /DBundleNet=1 desktop/installer/KeySaver.iss
+& "C:\Program Files\Inno Setup 7\ISCC.exe" /DBundleNet=1 installer/KeySaver.iss
 ```
 
-Оба появятся в `desktop/installer/output`.
+Оба появятся в `installer/output`.
 
-`index.html` — старый веб-макет интерфейса. На работу программы он не влияет.
+`example_preview_html/index.html` — старый веб-макет интерфейса. На работу программы он не влияет.

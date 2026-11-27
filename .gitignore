@@ -1,4 +1,7 @@
-/desktop/bin/
-/desktop/obj/
-/desktop/installer/output
-/desktop/c\#
+/bin/
+/obj/
+/installer/output
+/c\#
+.vs/
+*.user
+*.suo
