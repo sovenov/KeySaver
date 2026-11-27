@@ -10,6 +10,8 @@ namespace KeySaver
     public sealed class KeyboardRecorder : IDisposable
     {
         private readonly Action<SessionRecord> onSession;
+        private readonly Action<TypingDraft> onDraft;
+        private bool bufferDirty;
         private readonly object gate = new object();
         private readonly ManualResetEventSlim ready = new ManualResetEventSlim(false);
         private readonly uint selfPid = (uint)Process.GetCurrentProcess().Id;
@@ -40,10 +42,15 @@ namespace KeySaver
         private string seenPath;
         private string seenKey = "unknown";
         private bool seenSelf;
+        private bool altCode;
+        private bool altCodeAnsi;
+        private bool altCodeOverflow;
+        private int altCodeValue;
 
-        public KeyboardRecorder(Action<SessionRecord> onSession)
+        public KeyboardRecorder(Action<SessionRecord> onSession, Action<TypingDraft> onDraft)
         {
             this.onSession = onSession ?? throw new ArgumentNullException(nameof(onSession));
+            this.onDraft = onDraft;
             keyboardProc = KeyboardCallback;
             mouseProc = MouseCallback;
         }
@@ -74,6 +81,7 @@ namespace KeySaver
             {
                 stop = true;
                 running = false;
+                ClearAltCode();
                 pending = Detach();
                 id = threadId;
             }
@@ -159,9 +167,14 @@ namespace KeySaver
 
         private IntPtr KeyboardCallback(int code, IntPtr wParam, IntPtr lParam)
         {
-            if (code >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
+            if (code >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN
+                || wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP))
             {
-                try { OnKey(Marshal.PtrToStructure<Kbdll>(lParam)); }
+                try
+                {
+                    OnKey(Marshal.PtrToStructure<Kbdll>(lParam),
+                        wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN);
+                }
                 catch (Exception) { }
             }
             return CallNextHookEx(keyboardHook, code, wParam, lParam);
@@ -179,34 +192,68 @@ namespace KeySaver
 
         private void OnLeftClick()
         {
-            SessionRecord done;
+            SessionRecord done = null;
+            TypingDraft draft = null;
+            var publishDraft = false;
             lock (gate)
             {
                 if (!running || !mouseRule) return;
+                bufferDirty = false;
                 done = Detach();
+                if (bufferDirty)
+                {
+                    publishDraft = true;
+                    draft = Snapshot();
+                }
             }
             Publish(done);
+            if (publishDraft) PublishDraft(draft);
         }
 
-        private void OnKey(Kbdll keyData)
+        private void OnKey(Kbdll keyData, bool down)
         {
             SessionRecord done = null;
+            TypingDraft draft = null;
+            var publishDraft = false;
             lock (gate)
             {
                 if (running)
                 {
+                    bufferDirty = false;
                     var key = (Keys)keyData.vkCode;
                     var target = LookAtForeground();
                     if (started && (target.Skip || !string.Equals(target.Key, app, StringComparison.Ordinal)))
                         done = Detach();
-                    if (!target.Skip) TakeKey(key, keyData, target, ref done);
+                    if (target.Skip) ClearAltCode();
+                    else if (!down) ReleaseKey(key, target);
+                    else TakeKey(key, keyData, target, ref done);
+                    if (bufferDirty)
+                    {
+                        publishDraft = true;
+                        draft = Snapshot();
+                    }
                 }
             }
             Publish(done);
+            if (publishDraft) PublishDraft(draft);
+        }
+
+        private void ReleaseKey(Keys key, Target target)
+        {
+            if (!IsAltKey(key)) return;
+            FinishAltCode(target);
         }
 
         private void TakeKey(Keys key, Kbdll keyData, Target target, ref SessionRecord done)
         {
+            if (IsNumpadDigit(key) && AltCodeChord())
+            {
+                PushAltDigit(key);
+                Arm();
+                return;
+            }
+            if (altCode && !IsModifier(key)) ClearAltCode();
+
             if (IsModifier(key))
             {
                 Arm();
@@ -231,7 +278,7 @@ namespace KeySaver
             else if (key == Keys.Back && !alt && !win)
             {
                 if (started) Backspace(ctrl);
-                if (buffer.Length == 0) { started = false; Disarm(); }
+                if (buffer.Length == 0) { started = false; Disarm(); bufferDirty = true; }
                 else Arm();
             }
             else if ((ctrl && !alt) || (alt && !ctrl) || win)
@@ -256,6 +303,7 @@ namespace KeySaver
                 appPath = target.Path;
             }
             buffer.Append(text);
+            bufferDirty = true;
             Arm();
         }
 
@@ -265,23 +313,34 @@ namespace KeySaver
             if (!word)
             {
                 buffer.Length -= char.IsLowSurrogate(buffer[buffer.Length - 1]) && buffer.Length >= 2 ? 2 : 1;
+                bufferDirty = true;
                 return;
             }
             int index = buffer.Length - 1;
             while (index >= 0 && char.IsWhiteSpace(buffer[index])) index--;
             while (index >= 0 && !char.IsWhiteSpace(buffer[index])) index--;
             buffer.Length = index + 1;
+            bufferDirty = true;
         }
 
         private void OnIdle(object state)
         {
-            SessionRecord done;
+            SessionRecord done = null;
+            TypingDraft draft = null;
+            var publishDraft = false;
             lock (gate)
             {
                 if (!running) return;
+                bufferDirty = false;
                 done = Detach();
+                if (bufferDirty)
+                {
+                    publishDraft = true;
+                    draft = Snapshot();
+                }
             }
             Publish(done);
+            if (publishDraft) PublishDraft(draft);
         }
 
         private void Arm()
@@ -299,17 +358,34 @@ namespace KeySaver
         private SessionRecord Detach()
         {
             Disarm();
-            if (!started || buffer.Length == 0)
+            var text = buffer.ToString();
+            var blank = !started || buffer.Length == 0 || TypingDraft.IsBlank(text);
+            if (blank)
             {
                 started = false;
                 buffer.Clear();
+                appPath = null;
+                bufferDirty = true;
                 return null;
             }
-            var session = new SessionRecord(app, startedAt, DateTimeOffset.UtcNow, buffer.ToString(), appPath);
+            var session = new SessionRecord(app, startedAt, DateTimeOffset.UtcNow, text, appPath);
             buffer.Clear();
             started = false;
             appPath = null;
+            bufferDirty = true;
             return session;
+        }
+
+        private TypingDraft Snapshot()
+        {
+            if (!started || buffer.Length == 0 || TypingDraft.IsBlank(buffer.ToString())) return null;
+            return new TypingDraft(app, appPath, startedAt, buffer.ToString());
+        }
+
+        private void PublishDraft(TypingDraft draft)
+        {
+            try { onDraft?.Invoke(draft); }
+            catch (Exception) { }
         }
 
         private void Publish(SessionRecord session)
@@ -399,6 +475,80 @@ namespace KeySaver
 
         private static bool Down(Keys key) => (GetAsyncKeyState((int)key) & 0x8000) != 0;
 
+        private void PushAltDigit(Keys key)
+        {
+            int digit = key - Keys.NumPad0;
+            if (!altCode)
+            {
+                altCode = true;
+                altCodeAnsi = digit == 0;
+                altCodeValue = 0;
+                altCodeOverflow = false;
+            }
+            if (altCodeOverflow) return;
+            long next = (long)altCodeValue * 10 + digit;
+            if (next > 0x10FFFF)
+            {
+                altCodeOverflow = true;
+                return;
+            }
+            altCodeValue = (int)next;
+        }
+
+        private void FinishAltCode(Target target)
+        {
+            if (!altCode) return;
+            int value = altCodeValue;
+            bool ansi = altCodeAnsi;
+            bool overflow = altCodeOverflow;
+            ClearAltCode();
+            if (overflow)
+            {
+                if (started) Arm();
+                return;
+            }
+            var text = AltCodeText(value, ansi);
+            if (!string.IsNullOrEmpty(text)) Type(text, target);
+            else if (started) Arm();
+        }
+
+        private void ClearAltCode()
+        {
+            altCode = false;
+            altCodeAnsi = false;
+            altCodeOverflow = false;
+            altCodeValue = 0;
+        }
+
+        private static bool AltCodeChord()
+        {
+            bool ctrl, alt, win;
+            Modifiers(out ctrl, out alt, out win);
+            return alt && !ctrl && !win && (GetKeyState(0x90) & 1) != 0;
+        }
+
+        private static bool IsNumpadDigit(Keys key) => key >= Keys.NumPad0 && key <= Keys.NumPad9;
+
+        private static bool IsAltKey(Keys key) => key == Keys.Menu || key == Keys.LMenu || key == Keys.RMenu;
+
+        // Windows отдаёт символ Alt-кода только при отпускании Alt, хук WM_CHAR не видит.
+        // Ведущий ноль — системная ANSI-страница, без него до 255 — OEM, больше 255 — сам код Unicode.
+        private static string AltCodeText(int value, bool ansi)
+        {
+            if (value <= 0) return null;
+            if (!ansi && value > 255)
+            {
+                if (value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) return null;
+                return char.ConvertFromUtf32(value);
+            }
+            byte code = (byte)(value & 0xFF);
+            if (code == 0) return null;
+            var chars = new char[2];
+            int count = MultiByteToWideChar(ansi ? 0u : 1u, 0, new[] { code }, 1, chars, chars.Length);
+            if (count <= 0 || chars[0] == '\0') return null;
+            return new string(chars, 0, count);
+        }
+
         private static bool IsModifier(Keys key)
         {
             switch (key)
@@ -485,7 +635,9 @@ namespace KeySaver
         private const int WH_KEYBOARD_LL = 13;
         private const int WH_MOUSE_LL = 14;
         private const int WM_KEYDOWN = 0x0100;
+        private const int WM_KEYUP = 0x0101;
         private const int WM_SYSKEYDOWN = 0x0104;
+        private const int WM_SYSKEYUP = 0x0105;
         private const int WM_LBUTTONDOWN = 0x0201;
         private const int WM_NCLBUTTONDOWN = 0x00A1;
         private const int WM_QUIT = 0x0012;
@@ -544,5 +696,8 @@ namespace KeySaver
 
         [DllImport("kernel32.dll")]
         private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll")]
+        private static extern int MultiByteToWideChar(uint codePage, uint flags, byte[] bytes, int byteCount, [Out] char[] chars, int charCount);
     }
 }

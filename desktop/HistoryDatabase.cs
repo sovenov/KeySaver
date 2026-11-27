@@ -14,6 +14,49 @@ namespace KeySaver
         public string Path { get; set; }
     }
 
+    public sealed class TypingDraft
+    {
+        public TypingDraft(string app, string path, DateTimeOffset startedAt, string text)
+        {
+            App = string.IsNullOrEmpty(app) ? "unknown" : app;
+            Path = string.IsNullOrWhiteSpace(path) ? null : path;
+            StartedAt = startedAt.ToUniversalTime();
+            Text = text ?? string.Empty;
+        }
+
+        public string App { get; }
+        public string Path { get; }
+        public DateTimeOffset StartedAt { get; }
+        public string Text { get; }
+
+        public static bool IsBlank(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return true;
+            foreach (var character in text)
+            {
+                if (character != ' ' && !IsLineBreak(character)) return false;
+            }
+            return true;
+        }
+
+        private static bool IsLineBreak(char character)
+        {
+            switch (character)
+            {
+                case '\n':
+                case '\r':
+                case '\u000B':
+                case '\u000C':
+                case '\u0085':
+                case '\u2028':
+                case '\u2029':
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
     internal sealed class HistoryDatabase : IDisposable
     {
         private static readonly byte[] AssociatedData = Encoding.ASCII.GetBytes("keysaver-row:1");
@@ -29,6 +72,7 @@ namespace KeySaver
             connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
             connection.Open();
             Execute("PRAGMA journal_mode=WAL;");
+            Execute("PRAGMA synchronous=FULL;");
             Execute(@"CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY,
                 app TEXT NOT NULL,
@@ -39,6 +83,13 @@ namespace KeySaver
                 content BLOB NOT NULL)");
             Execute("CREATE INDEX IF NOT EXISTS ix_sessions_started ON sessions(started_at);");
             Execute("CREATE INDEX IF NOT EXISTS ix_sessions_app ON sessions(app);");
+            Execute(@"CREATE TABLE IF NOT EXISTS draft (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                app TEXT NOT NULL,
+                started_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                nonce BLOB NOT NULL,
+                content BLOB NOT NULL)");
         }
 
         public int Count()
@@ -99,6 +150,7 @@ namespace KeySaver
                     while (reader.Read())
                     {
                         var record = ReadRecord(reader);
+                        if (TypingDraft.IsBlank(record.Text)) continue;
                         if (text.Length == 0 || (record.Text != null && record.Text.IndexOf(text, StringComparison.CurrentCultureIgnoreCase) >= 0))
                             result.Add(record);
                     }
@@ -112,8 +164,130 @@ namespace KeySaver
             return Query("all", null, null, string.Empty);
         }
 
+        public void SaveDraft(TypingDraft draft)
+        {
+            if (draft == null || TypingDraft.IsBlank(draft.Text))
+            {
+                ClearDraft();
+                return;
+            }
+            var plain = Pack(draft.Text, draft.Path);
+            byte[] nonce;
+            var content = HistoryTransfer.Seal(key, plain, AssociatedData, out nonce);
+            Array.Clear(plain, 0, plain.Length);
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = @"INSERT INTO draft(id, app, started_at, updated_at, nonce, content)
+                    VALUES (1, @app, @started, @updated, @nonce, @content)
+                    ON CONFLICT(id) DO UPDATE SET
+                        app = excluded.app,
+                        started_at = excluded.started_at,
+                        updated_at = excluded.updated_at,
+                        nonce = excluded.nonce,
+                        content = excluded.content";
+                command.Parameters.AddWithValue("@app", draft.App ?? "unknown");
+                command.Parameters.AddWithValue("@started", ToUnix(draft.StartedAt));
+                command.Parameters.AddWithValue("@updated", ToUnix(DateTimeOffset.UtcNow));
+                command.Parameters.AddWithValue("@nonce", nonce);
+                command.Parameters.AddWithValue("@content", content);
+                command.ExecuteNonQuery();
+            }
+        }
+
+        public void ClearDraft()
+        {
+            Execute("DELETE FROM draft");
+        }
+
+        public void CommitSession(SessionRecord record)
+        {
+            transaction = connection.BeginTransaction();
+            try
+            {
+                Add(record);
+                Execute("DELETE FROM draft");
+                transaction.Commit();
+            }
+            finally
+            {
+                transaction.Dispose();
+                transaction = null;
+            }
+        }
+
+        public void DiscardBlankSessions()
+        {
+            using (var version = connection.CreateCommand())
+            {
+                version.CommandText = "PRAGMA user_version";
+                if (Convert.ToInt32(version.ExecuteScalar()) >= 1) return;
+            }
+
+            var blank = new List<long>();
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT id, nonce, content FROM sessions";
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        string text;
+                        string path;
+                        Unpack(Open((byte[])reader["nonce"], (byte[])reader["content"]), out text, out path);
+                        if (TypingDraft.IsBlank(text)) blank.Add(reader.GetInt64(0));
+                    }
+                }
+            }
+
+            if (blank.Count > 0) Delete(blank);
+            Execute("PRAGMA user_version = 1");
+        }
+
+        public void PromoteDraft()
+        {
+            string app;
+            long started;
+            long updated;
+            byte[] plain;
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT app, started_at, updated_at, nonce, content FROM draft WHERE id = 1";
+                using (var reader = command.ExecuteReader())
+                {
+                    if (!reader.Read()) return;
+                    app = reader.GetString(0);
+                    started = reader.GetInt64(1);
+                    updated = reader.GetInt64(2);
+                    plain = Open((byte[])reader["nonce"], (byte[])reader["content"]);
+                }
+            }
+
+            string text;
+            string path;
+            Unpack(plain, out text, out path);
+            if (TypingDraft.IsBlank(text))
+            {
+                ClearDraft();
+                return;
+            }
+
+            transaction = connection.BeginTransaction();
+            try
+            {
+                Add(new SessionRecord(app, FromUnix(started), FromUnix(updated), text, path));
+                Execute("DELETE FROM draft");
+                transaction.Commit();
+            }
+            finally
+            {
+                transaction.Dispose();
+                transaction = null;
+            }
+        }
+
         public bool Add(SessionRecord record)
         {
+            if (record == null || TypingDraft.IsBlank(record.Text)) return false;
             var hash = Fingerprint(record);
             var plain = Pack(record.Text, record.Path);
             byte[] nonce;
@@ -229,6 +403,7 @@ namespace KeySaver
         {
             using (var command = connection.CreateCommand())
             {
+                command.Transaction = transaction;
                 command.CommandText = sql;
                 command.ExecuteNonQuery();
             }

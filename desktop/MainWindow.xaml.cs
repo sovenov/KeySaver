@@ -65,7 +65,7 @@ namespace KeySaver
                 loadErrors.Add("Не удалось прочитать автозапуск. " + error.Message);
             }
 
-            recorder = new KeyboardRecorder(OnSessionRecorded);
+            recorder = new KeyboardRecorder(OnSessionRecorded, OnDraftChanged);
             recorder.Apply(preferences);
 
             ready = true;
@@ -90,6 +90,22 @@ namespace KeySaver
             CreateTrayIcon();
         }
 
+        private void OnDraftChanged(TypingDraft draft)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnDraftChanged(draft)));
+                return;
+            }
+            if (!historyReady) return;
+            try
+            {
+                if (draft == null || TypingDraft.IsBlank(draft.Text)) storage.ClearDraft();
+                else storage.SaveDraft(draft);
+            }
+            catch (Exception error) when (IsStorageError(error)) { }
+        }
+
         private void OnSessionRecorded(SessionRecord rec)
         {
             if (!Dispatcher.CheckAccess())
@@ -97,7 +113,7 @@ namespace KeySaver
                 Dispatcher.BeginInvoke(new Action(() => OnSessionRecorded(rec)));
                 return;
             }
-            try { storage.AddSession(rec); RenderHistory(false); }
+            try { storage.CommitSession(rec); RenderHistory(false); }
             catch (Exception error) when (IsStorageError(error))
             {
                 ShowError("Не удалось сохранить сессию. " + error.Message);
@@ -184,7 +200,7 @@ namespace KeySaver
             recorder = null;
             if (pending != null && historyReady)
             {
-                try { storage.AddSession(pending); }
+                try { storage.CommitSession(pending); }
                 catch (Exception error) when (IsStorageError(error)) { }
             }
             base.OnClosed(e);

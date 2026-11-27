@@ -100,6 +100,26 @@ namespace KeySaver
         {
             if (history != null) history.Dispose();
             history = new HistoryDatabase(Path.Combine(directory, "history.db"), key);
+            history.PromoteDraft();
+            history.DiscardBlankSessions();
+        }
+
+        internal void SaveDraft(TypingDraft draft)
+        {
+            if (history == null || draft == null || string.IsNullOrEmpty(draft.Text)) return;
+            history.SaveDraft(draft);
+        }
+
+        internal void ClearDraft()
+        {
+            if (history == null) return;
+            history.ClearDraft();
+        }
+
+        internal void CommitSession(SessionRecord record)
+        {
+            if (history == null) throw new InvalidOperationException("История ещё не открыта.");
+            history.CommitSession(record);
         }
 
         internal int SessionCount()
