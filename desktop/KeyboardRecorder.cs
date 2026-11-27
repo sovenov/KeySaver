@@ -507,7 +507,7 @@ namespace KeySaver
                 if (started) Arm();
                 return;
             }
-            var text = AltCodeText(value, ansi);
+            var text = AltCodeText(value, ansi, target.Layout);
             if (!string.IsNullOrEmpty(text)) Type(text, target);
             else if (started) Arm();
         }
@@ -531,22 +531,36 @@ namespace KeySaver
 
         private static bool IsAltKey(Keys key) => key == Keys.Menu || key == Keys.LMenu || key == Keys.RMenu;
 
-        // Windows отдаёт символ Alt-кода только при отпускании Alt, хук WM_CHAR не видит.
-        // Ведущий ноль — системная ANSI-страница, без него до 255 — OEM, больше 255 — сам код Unicode.
-        private static string AltCodeText(int value, bool ansi)
+        // Windows вставляет символ при отпускании Alt. Обычные окна, включая VS Code,
+        // берут код по модулю 256: без ведущего нуля — OEM (OemToChar, для 1–31 глифы CP437),
+        // с ведущим нулём — ANSI-страница текущей раскладки.
+        private static string AltCodeText(int value, bool ansi, IntPtr layout)
         {
             if (value <= 0) return null;
-            if (!ansi && value > 255)
-            {
-                if (value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) return null;
-                return char.ConvertFromUtf32(value);
-            }
-            byte code = (byte)(value & 0xFF);
-            if (code == 0) return null;
+            int wrapped = value % 256;
+            if (wrapped == 0) return null;
+            byte code = (byte)wrapped;
             var chars = new char[2];
-            int count = MultiByteToWideChar(ansi ? 0u : 1u, 0, new[] { code }, 1, chars, chars.Length);
+            if (!ansi)
+            {
+                if (!OemToCharBuff(new[] { code }, chars, 1) || chars[0] == '\0') return null;
+                return chars[0].ToString();
+            }
+            int count = MultiByteToWideChar(AnsiCodePage(layout), 0, new[] { code }, 1, chars, chars.Length);
             if (count <= 0 || chars[0] == '\0') return null;
             return new string(chars, 0, count);
+        }
+
+        private static uint AnsiCodePage(IntPtr layout)
+        {
+            var text = new StringBuilder(16);
+            uint locale = (uint)layout.ToInt64() & 0xFFFF;
+            if (locale != 0 && GetLocaleInfo(locale, LOCALE_IDEFAULTANSICODEPAGE, text, text.Capacity) > 0)
+            {
+                uint codePage;
+                if (uint.TryParse(text.ToString(), out codePage)) return codePage;
+            }
+            return 0;
         }
 
         private static bool IsModifier(Keys key)
@@ -699,5 +713,13 @@ namespace KeySaver
 
         [DllImport("kernel32.dll")]
         private static extern int MultiByteToWideChar(uint codePage, uint flags, byte[] bytes, int byteCount, [Out] char[] chars, int charCount);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetLocaleInfo(uint locale, uint type, StringBuilder value, int size);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool OemToCharBuff(byte[] source, [Out] char[] destination, int count);
+
+        private const uint LOCALE_IDEFAULTANSICODEPAGE = 0x1004;
     }
 }
