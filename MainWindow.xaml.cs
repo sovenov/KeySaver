@@ -64,6 +64,13 @@ namespace KeySaver
                 Autostart.IsChecked = false;
                 loadErrors.Add("Не удалось прочитать автозапуск. " + error.Message);
             }
+            StartMinimized.IsChecked = preferences.StartMinimized;
+            StartMinimized.IsEnabled = Autostart.IsChecked == true;
+            if (WindowsAutostart.LaunchedByAutostart() && preferences.StartMinimized && UiPassword.IsSet(preferences))
+            {
+                ShowActivated = false;
+                WindowState = WindowState.Minimized;
+            }
 
             recorder = new KeyboardRecorder(OnSessionRecorded, OnDraftChanged);
             recorder.Apply(preferences);
@@ -134,6 +141,14 @@ namespace KeySaver
                 ready = true;
                 ShowError("Не удалось изменить автозапуск. " + error.Message);
             }
+            StartMinimized.IsEnabled = Autostart.IsChecked == true;
+        }
+
+        private void ChangeStartMinimized(object sender, RoutedEventArgs e)
+        {
+            if (!ready) return;
+            preferences.StartMinimized = StartMinimized.IsChecked == true;
+            SavePreferences();
         }
 
         private void ChangeRecordingEnabled(object sender, RoutedEventArgs e)
@@ -220,6 +235,14 @@ namespace KeySaver
                 return key != null && key.GetValue(ValueName) is string path && path.Length > 0;
         }
 
+        public static bool LaunchedByAutostart()
+        {
+            var args = Environment.GetCommandLineArgs();
+            for (int index = 1; index < args.Length; index++)
+                if (string.Equals(args[index], "/autostart", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
         public static void Set(bool enabled)
         {
             using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(KeyPath))
@@ -231,7 +254,7 @@ namespace KeySaver
                     return;
                 }
                 var exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                key.SetValue(ValueName, "\"" + exe + "\"");
+                key.SetValue(ValueName, "\"" + exe + "\" /autostart");
             }
         }
     }

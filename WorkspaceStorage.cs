@@ -40,6 +40,9 @@ namespace KeySaver
         [DataMember(Name = "idleSeconds")]
         public int IdleSeconds { get; set; }
 
+        [DataMember(Name = "startMinimized")]
+        public bool StartMinimized { get; set; }
+
         [DataMember(Name = "passwordSalt")]
         public string PasswordSalt { get; set; }
 
@@ -72,6 +75,7 @@ namespace KeySaver
             EnterRule = false;
             IdleRule = true;
             IdleSeconds = 5;
+            StartMinimized = true;
             PasswordSalt = null;
             PasswordHash = null;
             PasswordVersion = 0;

@@ -997,14 +997,26 @@
                                 </Border>
                             </StackPanel>
                             <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Margin="18,22,18,8" Padding="0,14,0,6">
-                                <CheckBox x:Name="Autostart" Style="{StaticResource RuleSwitch}"
-                                          AutomationProperties.Name="Автозапуск Windows" Click="ChangeAutostart">
-                                    <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
-                                        <TextBlock Text="Автозапуск"/>
-                                        <TextBlock Text="Запускать KeySaver при входе в Windows" FontSize="13" FontWeight="Normal"
-                                                   Foreground="{DynamicResource MutedBrush}"/>
-                                    </StackPanel>
-                                </CheckBox>
+                                <StackPanel>
+                                    <CheckBox x:Name="Autostart" Style="{StaticResource RuleSwitch}"
+                                              AutomationProperties.Name="Автозапуск Windows" Click="ChangeAutostart">
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                            <TextBlock Text="Автозапуск"/>
+                                            <TextBlock Text="Запускать KeySaver при входе в Windows" FontSize="13" FontWeight="Normal"
+                                                       Foreground="{DynamicResource MutedBrush}"/>
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,8,0,0" Padding="0,8,0,0">
+                                        <CheckBox x:Name="StartMinimized" Style="{StaticResource RuleSwitch}" IsChecked="True"
+                                                  AutomationProperties.Name="Запускать свёрнутым" Click="ChangeStartMinimized">
+                                            <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                                <TextBlock Text="Запускать свёрнутым"/>
+                                                <TextBlock Text="При автозапуске открывать окно свёрнутым" FontSize="13" FontWeight="Normal"
+                                                           Foreground="{DynamicResource MutedBrush}"/>
+                                            </StackPanel>
+                                        </CheckBox>
+                                    </Border>
+                                </StackPanel>
                             </Border>
                         </StackPanel>
                     </Border>
