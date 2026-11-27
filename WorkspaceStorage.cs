@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
@@ -90,8 +91,16 @@ namespace KeySaver
         private HistoryDatabase history;
 
         public WorkspaceStorage()
-            : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KeySaver"))
+            : this(DataDirectory())
         {
+        }
+
+        private static string DataDirectory()
+        {
+            var folder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            if (!string.IsNullOrEmpty(folder) && File.Exists(Path.Combine(folder, "portable.txt")))
+                return Path.Combine(folder, "data");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KeySaver");
         }
 
         public WorkspaceStorage(string directory)
